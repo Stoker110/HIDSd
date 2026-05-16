@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>安全Agent部署合规性检查</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root { --primary: #2563eb; --bg: #f8fafc; --card: #fff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --danger: #dc2626; --warning: #d97706; --success: #16a34a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 8px; }
+  .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 24px; }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+  .card-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+
+  .upload-area { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .upload-box { border: 2px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; transition: all .2s; position: relative; }
+  .upload-box:hover { border-color: var(--primary); background: #eff6ff; }
+  .upload-box.loaded { border-color: var(--success); background: #f0fdf4; }
+  .upload-box input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .upload-icon { font-size: 2rem; margin-bottom: 8px; }
+  .upload-label { font-weight: 600; margin-bottom: 4px; }
+  .upload-hint { font-size: 0.8rem; color: var(--muted); }
+  .upload-status { font-size: 0.85rem; margin-top: 8px; font-weight: 500; }
+
+  .config-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .config-row label { font-size: 0.85rem; font-weight: 500; color: var(--muted); display: block; margin-bottom: 4px; }
+  .config-row input { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; }
+
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 24px; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all .15s; }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+  .btn-success { background: var(--success); color: #fff; }
+  .btn-success:hover { background: #15803d; }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn-outline:hover { background: var(--bg); }
+  .actions { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+
+  .log-area { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 16px; font-family: "SF Mono", "Fira Code", monospace; font-size: 0.85rem; max-height: 200px; overflow-y: auto; line-height: 1.6; }
+  .log-area .step { color: #60a5fa; }
+  .log-area .ok { color: #4ade80; }
+  .log-area .err { color: #f87171; }
+  .log-area .warn { color: #fbbf24; }
+
+  .tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 16px; }
+  .tab { padding: 10px 20px; cursor: pointer; font-weight: 500; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all .15s; }
+  .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat-card { background: var(--bg); border-radius: 8px; padding: 12px 16px; text-align: center; }
+  .stat-value { font-size: 1.5rem; font-weight: 700; }
+  .stat-label { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+
+  .sheet-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 12px; overflow-x: auto; }
+  .sheet-tab { padding: 6px 14px; cursor: pointer; font-size: 0.85rem; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; }
+  .sheet-tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { background: var(--bg); padding: 8px 12px; text-align: left; font-weight: 600; border-bottom: 2px solid var(--border); white-space: nowrap; }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  tr:hover td { background: #f1f5f9; }
+  .table-wrap { max-height: 400px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.78rem; font-weight: 600; }
+  .badge-danger { background: #fef2f2; color: var(--danger); }
+  .badge-warning { background: #fffbeb; color: var(--warning); }
+
+  .empty-msg { text-align: center; padding: 40px; color: var(--muted); }
+
+  .hidden { display: none !important; }
+
+  @media (max-width: 640px) {
+    .upload-area { grid-template-columns: 1fr; }
+    .config-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>安全Agent部署合规性检查</h1>
+  <p class="subtitle">上传基地资产表和平台数据，自动检测未安装/离线Agent及账外资产</p>
+
+  <div class="card">
+    <div class="card-title">1. 上传数据文件</div>
+    <div class="upload-area">
+      <div class="upload-box" id="boxBase">
+        <input type="file" accept=".xlsx,.xls" id="fileBase" onchange="handleFile('base', this)">
+        <div class="upload-icon">&#128196;</div>
+        <div class="upload-label">基地资产表</div>
+        <div class="upload-hint">base.xlsx (.xlsx)</div>
+        <div class="upload-status" id="statusBase"></div>
+      </div>
+      <div class="upload-box" id="boxPlat">
+        <input type="file" accept=".csv" id="filePlat" onchange="handleFile('plat', this)">
+        <div class="upload-icon">&#128202;</div>
+        <div class="upload-label">安全平台数据</div>
+        <div class="upload-hint">plat.csv (.csv)</div>
+        <div class="upload-status" id="statusPlat"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">2. 列名配置</div>
+    <div class="config-row">
+      <div>
+        <label>基地表 - IP列名</label>
+        <input type="text" id="cfgBaseIp" value="IP地址">
+      </div>
+      <div>
+        <label>基地表 - 是否应部署列名</label>
+        <input type="text" id="cfgDeployFlag" value="是否应部署">
+      </div>
+      <div>
+        <label>平台表 - IP列名</label>
+        <input type="text" id="cfgPlatIp" value="主机 IP">
+      </div>
+      <div>
+        <label>平台表 - 状态列名</label>
+        <input type="text" id="cfgPlatStatus" value="主机状态">
+      </div>
+      <div>
+        <label>账外资产分组列名</label>
+        <input type="text" id="cfgGroupCol" value="所属部门">
+      </div>
+      <div>
+        <label>CSV编码</label>
+        <input type="text" id="cfgCsvEnc" value="utf-8">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="actions">
+      <button class="btn btn-primary" id="btnRun" onclick="runCheck()" disabled>开始检测</button>
+      <button class="btn btn-outline hidden" id="btnReset" onclick="resetAll()">重新上传</button>
+    </div>
+    <div class="log-area hidden" id="logArea" style="margin-top:16px"></div>
+  </div>
+
+  <div class="card hidden" id="resultArea">
+    <div class="tabs">
+      <div class="tab active" data-tab="abnormal" onclick="switchTab('abnormal')">异常资产</div>
+      <div class="tab" data-tab="unknown" onclick="switchTab('unknown')">账外资产</div>
+    </div>
+
+    <div class="tab-content active" id="tab-abnormal">
+      <div class="stats" id="statsAbnormal"></div>
+      <div class="actions" style="margin-bottom:12px">
+        <button class="btn btn-success btn-sm" onclick="exportAbnormal()">导出异常报告 (xlsx)</button>
+      </div>
+      <div class="sheet-tabs" id="abnormalSheetTabs"></div>
+      <div class="table-wrap" id="abnormalTableWrap"></div>
+    </div>
+
+    <div class="tab-content" id="tab-unknown">
+      <div class="stats" id="statsUnknown"></div>
+      <div class="actions" style="margin-bottom:12px">
+        <button class="btn btn-success btn-sm" onclick="exportUnknown()">导出账外资产 (xlsx)</button>
+      </div>
+      <div class="sheet-tabs" id="unknownSheetTabs"></div>
+      <div class="table-wrap" id="unknownTableWrap"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let baseData = null;
+let platData = null;
+let abnormalResult = {};
+let unknownResult = {};
+
+function log(msg, type = '') {
+  const el = document.getElementById('logArea');
+  el.classList.remove('hidden');
+  const span = document.createElement('div');
+  if (type) span.className = type;
+  span.textContent = msg;
+  el.appendChild(span);
+  el.scrollTop = el.scrollHeight;
+}
+
+function handleFile(type, input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  if (type === 'base') {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        baseData = {};
+        wb.SheetNames.forEach(name => {
+          baseData[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' });
+        });
+        const sheetCount = Object.keys(baseData).length;
+        let totalRows = 0;
+        Object.values(baseData).forEach(d => totalRows += d.length);
+        document.getElementById('statusBase').textContent = `已加载: ${sheetCount}个Sheet, ${totalRows}行`;
+        document.getElementById('statusBase').style.color = 'var(--success)';
+        document.getElementById('boxBase').classList.add('loaded');
+        checkReady();
+      } catch(err) {
+        document.getElementById('statusBase').textContent = '读取失败: ' + err.message;
+        document.getElementById('statusBase').style.color = 'var(--danger)';
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    const encoding = document.getElementById('cfgCsvEnc').value || 'utf-8';
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        let text = e.target.result;
+        if (encoding.toLowerCase() === 'gbk' || encoding.toLowerCase() === 'gb2312') {
+          const decoder = new TextDecoder('gbk');
+          const arrayBuf = new Uint8Array(reader.result);
+          text = decoder.decode(arrayBuf);
+        }
+        const wb = XLSX.read(text, { type: 'string' });
+        platData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+        document.getElementById('statusPlat').textContent = `已加载: ${platData.length}行`;
+        document.getElementById('statusPlat').style.color = 'var(--success)';
+        document.getElementById('boxPlat').classList.add('loaded');
+        checkReady();
+      } catch(err) {
+        document.getElementById('statusPlat').textContent = '读取失败: ' + err.message;
+        document.getElementById('statusPlat').style.color = 'var(--danger)';
+      }
+    };
+    if (encoding.toLowerCase() === 'gbk' || encoding.toLowerCase() === 'gb2312') {
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.readAsText(file, encoding);
+    }
+  }
+}
+
+function checkReady() {
+  document.getElementById('btnRun').disabled = !(baseData && platData);
+}
+
+function strip(v) { return String(v).trim(); }
+
+function runCheck() {
+  document.getElementById('logArea').innerHTML = '';
+  document.getElementById('logArea').classList.remove('hidden');
+  document.getElementById('btnRun').disabled = true;
+  abnormalResult = {};
+  unknownResult = {};
+
+  const colBaseIp = document.getElementById('cfgBaseIp').value.trim();
+  const colDeployFlag = document.getElementById('cfgDeployFlag').value.trim();
+  const colPlatIp = document.getElementById('cfgPlatIp').value.trim();
+  const colPlatStatus = document.getElementById('cfgPlatStatus').value.trim();
+  const cfgGroupCol = document.getElementById('cfgGroupCol').value.trim();
+
+  log('1. 正在处理安全平台数据...');
+  const platMap = {};
+  platData.forEach(row => {
+    const ip = strip(row[colPlatIp]);
+    const status = strip(row[colPlatStatus]).toLowerCase();
+    if (ip) platMap[ip] = status;
+  });
+  log(`   -> 平台记录数: ${platData.length}, 唯一IP数: ${Object.keys(platMap).length}`, 'ok');
+
+  log('2. 正在处理基地资产表...');
+  const allKnownIps = new Set();
+
+  log('3. 开始对比并生成异常报告...');
+  for (const [sheetName, rows] of Object.entries(baseData)) {
+    if (!rows.length) continue;
+    if (!rows[0].hasOwnProperty(colBaseIp)) {
+      log(`   -> Sheet [${sheetName}] 未找到列 [${colBaseIp}]，跳过`, 'warn');
+      continue;
+    }
+
+    const ipsInSheet = rows.map(r => strip(r[colBaseIp]));
+    ipsInSheet.forEach(ip => { if (ip) allKnownIps.add(ip); });
+
+    const filtered = rows.filter(r => strip(r[colDeployFlag]) === '是');
+    if (!filtered.length) {
+      log(`   -> Sheet [${sheetName}] 无"应部署"资产，跳过`, 'warn');
+      continue;
+    }
+
+    const abnormalRows = [];
+    for (const row of filtered) {
+      const ip = strip(row[colBaseIp]);
+      if (!ip) continue;
+      const platStatus = platMap[ip];
+
+      let abnormalType = null;
+      if (platStatus === undefined) {
+        abnormalType = '未安装Agent';
+      } else if (platStatus === 'offline') {
+        abnormalType = 'Agent离线';
+      }
+
+      if (abnormalType) {
+        abnormalRows.push({ '异常类型': abnormalType, ...row });
+      }
+    }
+
+    if (abnormalRows.length) {
+      abnormalResult[sheetName] = abnormalRows;
+      log(`   -> Sheet [${sheetName}]: 发现 ${abnormalRows.length} 条异常`, 'err');
+    } else {
+      log(`   -> Sheet [${sheetName}]: 全部正常`, 'ok');
+    }
+  }
+
+  log('4. 正在分析账外新增资产 (平台有但基地表无)...');
+  const unknownRows = platData.filter(row => {
+    const ip = strip(row[colPlatIp]);
+    const status = strip(row[colPlatStatus]).toLowerCase();
+    return status === 'online' && !allKnownIps.has(ip);
+  });
+
+  if (unknownRows.length) {
+    if (cfgGroupCol && unknownRows[0].hasOwnProperty(cfgGroupCol)) {
+      const groups = {};
+      unknownRows.forEach(row => {
+        const gName = String(row[cfgGroupCol] || '未分组');
+        if (!groups[gName]) groups[gName] = [];
+        groups[gName].push(row);
+      });
+      unknownResult = groups;
+      log(`   -> 账外资产 ${unknownRows.length} 条，按【${cfgGroupCol}】分为 ${Object.keys(groups).length} 组`, 'warn');
+    } else {
+      unknownResult = { '账外资产清单': unknownRows };
+      log(`   -> 账外资产 ${unknownRows.length} 条`, 'warn');
+    }
+  } else {
+    log('   -> 未发现账外新增资产', 'ok');
+  }
+
+  log('检测完成！', 'ok');
+  document.getElementById('btnRun').disabled = false;
+  document.getElementById('btnReset').classList.remove('hidden');
+  renderResults();
+}
+
+function renderResults() {
+  document.getElementById('resultArea').classList.remove('hidden');
+
+  // abnormal stats
+  let totalAbnormal = 0, uninstalled = 0, offline = 0, sheetCount = Object.keys(abnormalResult).length;
+  Object.values(abnormalResult).forEach(rows => {
+    totalAbnormal += rows.length;
+    rows.forEach(r => {
+      if (r['异常类型'] === '未安装Agent') uninstalled++;
+      else if (r['异常类型'] === 'Agent离线') offline++;
+    });
+  });
+  document.getElementById('statsAbnormal').innerHTML = `
+    <div class="stat-card"><div class="stat-value" style="color:var(--danger)">${totalAbnormal}</div><div class="stat-label">异常总数</div></div>
+    <div class="stat-card"><div class="stat-value">${uninstalled}</div><div class="stat-label">未安装Agent</div></div>
+    <div class="stat-card"><div class="stat-value">${offline}</div><div class="stat-label">Agent离线</div></div>
+    <div class="stat-card"><div class="stat-value">${sheetCount}</div><div class="stat-label">涉及Sheet</div></div>
+  `;
+
+  // unknown stats
+  let totalUnknown = 0;
+  Object.values(unknownResult).forEach(rows => totalUnknown += rows.length);
+  const groupCount = Object.keys(unknownResult).length;
+  document.getElementById('statsUnknown').innerHTML = `
+    <div class="stat-card"><div class="stat-value" style="color:var(--warning)">${totalUnknown}</div><div class="stat-label">账外资产总数</div></div>
+    <div class="stat-card"><div class="stat-value">${groupCount}</div><div class="stat-label">分组数</div></div>
+  `;
+
+  renderSheetTabs('abnormal');
+  renderSheetTabs('unknown');
+}
+
+function renderSheetTabs(type) {
+  const data = type === 'abnormal' ? abnormalResult : unknownResult;
+  const tabsEl = document.getElementById(type + 'SheetTabs');
+  const wrapEl = document.getElementById(type + 'TableWrap');
+  tabsEl.innerHTML = '';
+  wrapEl.innerHTML = '';
+
+  const keys = Object.keys(data);
+  if (!keys.length) {
+    wrapEl.innerHTML = '<div class="empty-msg">未发现异常</div>';
+    return;
+  }
+
+  keys.forEach((name, i) => {
+    const tab = document.createElement('div');
+    tab.className = 'sheet-tab' + (i === 0 ? ' active' : '');
+    tab.textContent = name;
+    tab.onclick = () => {
+      tabsEl.querySelectorAll('.sheet-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      renderTable(type, name);
+    };
+    tabsEl.appendChild(tab);
+  });
+
+  renderTable(type, keys[0]);
+}
+
+function renderTable(type, sheetName) {
+  const data = type === 'abnormal' ? abnormalResult : unknownResult;
+  const wrapEl = document.getElementById(type + 'TableWrap');
+  const rows = data[sheetName] || [];
+
+  if (!rows.length) {
+    wrapEl.innerHTML = '<div class="empty-msg">无数据</div>';
+    return;
+  }
+
+  const cols = Object.keys(rows[0]);
+  let html = '<table><thead><tr>';
+  cols.forEach(c => html += `<th>${escHtml(c)}</th>`);
+  html += '</tr></thead><tbody>';
+  rows.forEach(row => {
+    html += '<tr>';
+    cols.forEach(c => {
+      let val = row[c] != null ? String(row[c]) : '';
+      if (c === '异常类型') {
+        const cls = val === '未安装Agent' ? 'badge-danger' : 'badge-warning';
+        val = `<span class="badge ${cls}">${escHtml(val)}</span>`;
+      } else {
+        val = escHtml(val);
+      }
+      html += `<td>${val}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  wrapEl.innerHTML = html;
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + name));
+}
+
+function exportAbnormal() {
+  if (!Object.keys(abnormalResult).length) { alert('无异常数据'); return; }
+  const wb = XLSX.utils.book_new();
+  for (const [name, rows] of Object.entries(abnormalResult)) {
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, name.substring(0, 31));
+  }
+  XLSX.writeFile(wb, 'work1_异常资产报告.xlsx');
+}
+
+function exportUnknown() {
+  if (!Object.keys(unknownResult).length) { alert('无账外资产数据'); return; }
+  const wb = XLSX.utils.book_new();
+  for (const [name, rows] of Object.entries(unknownResult)) {
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, name.substring(0, 31));
+  }
+  XLSX.writeFile(wb, 'work2_账外资产.xlsx');
+}
+
+function resetAll() {
+  baseData = null;
+  platData = null;
+  abnormalResult = {};
+  unknownResult = {};
+  document.getElementById('fileBase').value = '';
+  document.getElementById('filePlat').value = '';
+  document.getElementById('statusBase').textContent = '';
+  document.getElementById('statusPlat').textContent = '';
+  document.getElementById('boxBase').classList.remove('loaded');
+  document.getElementById('boxPlat').classList.remove('loaded');
+  document.getElementById('btnRun').disabled = true;
+  document.getElementById('btnReset').classList.add('hidden');
+  document.getElementById('logArea').classList.add('hidden');
+  document.getElementById('resultArea').classList.add('hidden');
+  checkReady();
+}
+</script>
+</body>
+</html>
